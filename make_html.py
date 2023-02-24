@@ -91,7 +91,6 @@ def github_labels(pr):
               for label in raw_labels]
     return labels
 
-
 def parse_imports(root_path):
     import_re = re.compile(r"^import ([^ ]*)")
 
@@ -167,6 +166,7 @@ class Mathlib3FileData:
     depth: int = 0     # `depth` is used for sorting based on the import hierarchy.
     forward_port: Optional[ForwardPortInfo] = None
     mathlib4_history: List[FileHistoryEntry] = field(default_factory=list)
+    open_prs: Optional[List[str]] = None # List of all open PRs with `mathlib3-pair`
 
     @functools.cached_property
     def state(self):
@@ -278,6 +278,39 @@ mathlib4_dir = build_dir / 'repos' / 'mathlib4'
 graph = parse_imports(mathlib_dir / 'src')
 graph = nx.transitive_reduction(graph)
 
+touched_files = dict()
+
+# Find touched files
+try:
+    logging.error("test")
+    pulls = mathlib4repo().get_pulls(state="open")
+    forward_ports = (pr for pr in pulls if 'mathlib3-pair' in (l.name for l in pr.get_labels()))
+    for pr in forward_ports:
+        logging.error(pr.title)
+        for file in (f.filename for f in pr.get_files()):
+            # touched_files[file] = set([pr])
+            touched_files[file] = touched_files.get(file, set()).union([pr.title])
+            logging.error(file)
+            #exit()
+        logging.error(touched_files)
+        break
+
+    # logging.error(pr)
+    # logging.error(github_labels(pr))
+    # import pdb
+    # pdb.set_trace()
+    # logging.error(pulls)
+except github.RateLimitExceededException:
+    if 'GITPOD_HOST' in os.environ:
+        warnings.warn(
+            'Unable to forward-port PRs; set `GITHUB_TOKEN` to increase the rate limit')
+        # return []
+    else:
+        raise
+# exit()
+logging.error(touched_files)
+
+
 (build_dir / 'html').mkdir(parents=True, exist_ok=True)
 
 shutil.copytree(Path('static'), build_dir / 'html', dirs_exist_ok=True)
@@ -300,7 +333,8 @@ def get_data():
                 status=f_status,
                 lines=lines,
                 labels=github_labels(f_status.mathlib4_pr) if ((not f_status.ported) and
-                                                                f_status.mathlib4_pr) else []
+                                                                f_status.mathlib4_pr) else [],
+                open_prs=touched_files.get(f_status.mathlib4_pr, ['None'])
             )
 
     with tqdm(data.items(), desc='building import graph') as pbar:

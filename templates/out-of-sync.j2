@@ -50,7 +50,7 @@ $(document).ready(function () {
     let table = elem.DataTable({
         columns: [
             { class: 'dt-control', orderable: false },
-            null, null, null, null, null,
+            null, null, null, null, null, null,
         ],
     });
     elem.on('click', 'td.dt-control', function () {
@@ -78,6 +78,7 @@ $(document).ready(function () {
         <th>Mathlib3 changes (newest first)</th>
         <th>&pm;</th>
         <th title="Longest chain of mathlib3-files importing this file.">import depth</th>
+        <th title="Open mathlib4-PRs with `mathlib3-pair` label touching this file.">PR</th>
     </thead>
     <tbody>
     {%- for d in needs_sync %}
@@ -104,9 +105,10 @@ $(document).ready(function () {
                 <span class="text-success" title="added">+{{added}}</span>&nbsp;<span class="text-danger" title="removed">-{{removed}}</span>
             </td>
             <td>{{ d.depth }}</td>
+            <td>{{ d.open_pr }}</td>
         </tr>
         <tr{% if not d.status.ported %} class="table-warning"{% endif %} data-is-child="true">
-            <td colspan="6">
+            <td colspan="7">
                 <pre><code class="language-diff">{{ d.forward_port.diff }}</code></pre>
             </td>
         </tr>
