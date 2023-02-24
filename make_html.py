@@ -166,7 +166,7 @@ class Mathlib3FileData:
     depth: int = 0     # `depth` is used for sorting based on the import hierarchy.
     forward_port: Optional[ForwardPortInfo] = None
     mathlib4_history: List[FileHistoryEntry] = field(default_factory=list)
-    open_prs: Optional[List[str]] = None # List of all open PRs with `mathlib3-pair`
+    forward_port_prs: Optional[List[str]] = None # List of all open PRs with `mathlib3-pair`
 
     @functools.cached_property
     def state(self):
@@ -278,38 +278,27 @@ mathlib4_dir = build_dir / 'repos' / 'mathlib4'
 graph = parse_imports(mathlib_dir / 'src')
 graph = nx.transitive_reduction(graph)
 
-touched_files = dict()
 
-# Find touched files
-try:
-    logging.error("test")
-    pulls = mathlib4repo().get_pulls(state="open")
-    forward_ports = (pr for pr in pulls if 'mathlib3-pair' in (l.name for l in pr.get_labels()))
-    for pr in forward_ports:
-        logging.error(pr.title)
-        for file in (f.filename for f in pr.get_files()):
-            # touched_files[file] = set([pr])
-            touched_files[file] = touched_files.get(file, set()).union([pr.title])
-            logging.error(file)
-            #exit()
-        logging.error(touched_files)
-        break
+@functools.cache
+def get_forward_port_prs():
 
-    # logging.error(pr)
-    # logging.error(github_labels(pr))
-    # import pdb
-    # pdb.set_trace()
-    # logging.error(pulls)
-except github.RateLimitExceededException:
-    if 'GITPOD_HOST' in os.environ:
-        warnings.warn(
-            'Unable to forward-port PRs; set `GITHUB_TOKEN` to increase the rate limit')
-        # return []
-    else:
+    # Keys are mathlib4-files and value is a set of PRs that
+    # are open, have label 'mathlib3-pair' and touch this file.
+    forward_port_prs = dict()
+
+    try:
+        pulls = mathlib4repo().get_pulls(state="open")
+        forward_ports = (pr for pr in pulls if 'mathlib3-pair' in (l.name for l in pr.get_labels()))
+        for pr in forward_ports:
+            for file in (f.filename for f in pr.get_files()):
+                forward_port_prs[file] = forward_port_prs.get(file, set()).union([pr])
+    except github.RateLimitExceededException:
+        if 'GITPOD_HOST' in os.environ:
+            warnings.warn(
+                'Unable to forward-port PRs; set `GITHUB_TOKEN` to increase the rate limit')
+            return forward_port_prs
         raise
-# exit()
-logging.error(touched_files)
-
+    return forward_port_prs
 
 (build_dir / 'html').mkdir(parents=True, exist_ok=True)
 
@@ -320,6 +309,7 @@ def get_data():
     data = {}
     max_len = max((len(i) for i in port_status), default=0)
     with tqdm(port_status.items(), desc='getting status information') as pbar:
+        forward_port_prs = get_forward_port_prs()
         for f_import, f_status in pbar:
             pbar.set_postfix_str(f_import.ljust(max_len), refresh=False)
             path = mathlib_dir / 'src' / Path(*f_import.split('.')).with_suffix('.lean')
@@ -334,7 +324,7 @@ def get_data():
                 lines=lines,
                 labels=github_labels(f_status.mathlib4_pr) if ((not f_status.ported) and
                                                                 f_status.mathlib4_pr) else [],
-                open_prs=touched_files.get(f_status.mathlib4_pr, ['None'])
+                forward_port_prs=forward_port_prs.get(f_status.mathlib4_file, [])
             )
 
     with tqdm(data.items(), desc='building import graph') as pbar:
